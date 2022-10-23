@@ -69,8 +69,7 @@ export function JobDetail(props: IJobDetailProps): JSX.Element {
     const initialState: ICreateJobModel = {
       ...emptyCreateJobModel(),
       jobName: props.model.jobName,
-      inputFile: props.model.inputFile,
-      outputPath: props.model.outputPrefix ?? '',
+      inputFile: getInputFilePath(props.model),
       environment: props.model.environment,
       runtimeEnvironmentParameters: props.model.runtimeEnvironmentParameters,
       parameters: props.model.parameters,
@@ -139,6 +138,17 @@ export function JobDetail(props: IJobDetailProps): JSX.Element {
     </InputAdornment>
   );
 
+  const getInputFilePath = (model: IJobDetailModel) => {
+    const output = model.outputs[0];
+    if(output.output_path) {
+      const parts = output.output_path.split("/");
+      parts[parts.length - 1] = model.inputFile;
+      return parts.join("/");
+    } else {
+      return model.inputFile;
+    }
+  }   
+
   const coreOptionsFields: TextFieldProps[][] = [
     [
       { value: props.model.jobName, label: trans.__('Job name') },
@@ -146,15 +156,8 @@ export function JobDetail(props: IJobDetailProps): JSX.Element {
     ],
     [
       {
-        value: props.model.inputFile,
+        value: getInputFilePath(props.model),
         label: trans.__('Input file'),
-        InputProps: {
-          startAdornment: homeAdornment
-        }
-      },
-      {
-        value: props.model.outputPath,
-        label: trans.__('Output directory'),
         InputProps: {
           startAdornment: homeAdornment
         }
