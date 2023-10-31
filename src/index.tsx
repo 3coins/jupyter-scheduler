@@ -32,9 +32,10 @@ export namespace CommandIDs {
   export const deleteJob = 'scheduling:delete-job';
   export const createJobFileBrowser = 'scheduling:create-from-filebrowser';
   export const createJobCurrentNotebook = 'scheduling:create-from-notebook';
-  export const showNotebookJobs = 'scheduling:show-notebook-jobs';
+  export const restoreLayout = 'scheduling:restore-layout';
   export const stopJob = 'scheduling:stop-job';
   export const downloadFiles = 'scheduling:download-files';
+  export const listJobsFromLauncher = 'scheduling:list-jobs-from-launcher';
 }
 
 export const NotebookJobsPanelId = 'notebook-jobs-panel';
@@ -174,7 +175,7 @@ async function activatePlugin(
     namespace: 'jupyterlab-scheduler'
   });
   restorer.restore(widgetTracker, {
-    command: CommandIDs.showNotebookJobs,
+    command: CommandIDs.restoreLayout,
     args: widget => widget.content.model.toJson(),
     name: () => 'jupyterlab-scheduler'
   });
@@ -235,15 +236,10 @@ async function activatePlugin(
 
   // Commands
 
-  commands.addCommand(CommandIDs.showNotebookJobs, {
+  commands.addCommand(CommandIDs.restoreLayout, {
     execute: async args => {
-      if (args['launcher']) {
-        eventLogger('launcher.show-jobs');
-      }
       showJobsPanel(args as IJobsModel);
-    },
-    label: trans.__('Notebook Jobs'),
-    icon: eventNoteIcon
+    }
   });
 
   commands.addCommand(CommandIDs.createJobFileBrowser, {
@@ -321,8 +317,19 @@ async function activatePlugin(
 
   // Add to launcher
   if (launcher) {
+    commands.addCommand(CommandIDs.listJobsFromLauncher, {
+      execute: async () => {
+        eventLogger('launcher.show-jobs');
+        showJobsPanel({
+          jobsView: JobsView.ListJobs
+        });
+      },
+      label: trans.__('Notebook Jobs'),
+      icon: eventNoteIcon
+    });
+
     launcher.add({
-      command: CommandIDs.showNotebookJobs,
+      command: CommandIDs.listJobsFromLauncher,
       args: {
         launcher: true
       }
