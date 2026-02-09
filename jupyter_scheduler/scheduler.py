@@ -3,6 +3,7 @@ import os
 import random
 import shutil
 from typing import Dict, List, Optional, Type, Union
+from uuid import uuid4
 
 import fsspec
 import psutil
@@ -13,7 +14,7 @@ from sqlalchemy import and_, asc, desc, func
 from traitlets import Instance
 from traitlets import Type as TType
 from traitlets import Unicode, default
-from traitlets.config import LoggingConfigurable
+from traitlets.config import Config, LoggingConfigurable
 
 from jupyter_scheduler.environments import EnvironmentManager
 from jupyter_scheduler.exceptions import (
@@ -21,6 +22,7 @@ from jupyter_scheduler.exceptions import (
     InputUriError,
     SchedulerError,
 )
+from jupyter_scheduler.job_id import make_job_id
 from jupyter_scheduler.models import (
     CountJobsQuery,
     CreateJob,
@@ -96,11 +98,17 @@ class BaseScheduler(LoggingConfigurable):
     )
 
     def __init__(
-        self, root_dir: str, environments_manager: Type[EnvironmentManager], config=None, **kwargs
+        self,
+        root_dir: str,
+        environments_manager: Type[EnvironmentManager],
+        config: Optional[Config] = None,
+        backend_id: str = None,
+        **kwargs,
     ):
         super().__init__(config=config, **kwargs)
         self.root_dir = root_dir
         self.environments_manager = environments_manager
+        self.backend_id = backend_id
 
     def create_job(self, model: CreateJob) -> str:
         """Creates a new job record, may trigger execution of the job.
@@ -324,13 +332,16 @@ class BaseScheduler(LoggingConfigurable):
         for output_format in model.output_formats:
             filename = output_filenames[output_format]
             output_path = os.path.join(output_dir, filename)
-            job_files.append(
-                JobFile(
-                    display_name=mapping[output_format],
-                    file_format=output_format,
-                    file_path=output_path if self.file_exists(output_path) else None,
+            file_exists = self.file_exists(output_path)
+            # Only add job file if it exists (handles optional outputs like stdout/stderr)
+            if file_exists:
+                job_files.append(
+                    JobFile(
+                        display_name=mapping[output_format],
+                        file_format=output_format,
+                        file_path=output_path,
+                    )
                 )
-            )
 
         # Add input file
         filename = model.input_filename
@@ -405,10 +416,15 @@ class Scheduler(BaseScheduler):
         environments_manager: Type[EnvironmentManager],
         db_url: str,
         config=None,
+        backend_id: str = None,
         **kwargs,
     ):
         super().__init__(
-            root_dir=root_dir, environments_manager=environments_manager, config=config, **kwargs
+            root_dir=root_dir,
+            environments_manager=environments_manager,
+            config=config,
+            backend_id=backend_id,
+            **kwargs,
         )
         self.db_url = db_url
         if self.task_runner_class:
@@ -442,12 +458,14 @@ class Scheduler(BaseScheduler):
             raise InputUriError(model.input_uri)
 
         input_path = os.path.join(self.root_dir, model.input_uri)
-        if not self.execution_manager_class.validate(self.execution_manager_class, input_path):
-            raise SchedulerError(
-                """There is no kernel associated with the notebook. Please open
-                    the notebook, select a kernel, and re-submit the job to execute.
-                    """
-            )
+        # Validate notebooks have a kernel (Python scripts and other file types skip this)
+        if input_path.endswith(".ipynb"):
+            if not self.execution_manager_class.validate(self.execution_manager_class, input_path):
+                raise SchedulerError(
+                    """There is no kernel associated with the notebook. Please open
+                        the notebook, select a kernel, and re-submit the job to execute.
+                        """
+                )
 
         with self.db_session() as session:
             if model.idempotency_token:
@@ -462,7 +480,15 @@ class Scheduler(BaseScheduler):
             if not model.output_formats:
                 model.output_formats = []
 
-            job = Job(**model.dict(exclude_none=True, exclude={"input_uri"}))
+            # Generate full job_id with backend prefix
+            uuid = str(uuid4())
+            full_job_id = make_job_id(self.backend_id, uuid) if self.backend_id else uuid
+
+            job = Job(
+                job_id=full_job_id,
+                backend_id=self.backend_id,
+                **model.dict(exclude_none=True, exclude={"input_uri", "backend_id"}),
+            )
 
             session.add(job)
             session.commit()
@@ -652,7 +678,7 @@ class Scheduler(BaseScheduler):
                 )
                 and describe_job_definition.schedule == model.schedule
                 and describe_job_definition.timezone == model.timezone
-                and (model.active == None or describe_job_definition.active == model.active)
+                and (model.active is None or describe_job_definition.active == model.active)
             ):
                 return
 

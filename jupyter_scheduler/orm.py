@@ -94,7 +94,7 @@ class CommonColumns:
 class Job(CommonColumns, Base):
     __tablename__ = "jobs"
     __table_args__ = {"extend_existing": True}
-    job_id = Column(String(36), primary_key=True, default=generate_uuid)
+    job_id = Column(String(128), primary_key=True, default=generate_uuid)
     job_definition_id = Column(String(36))
     status = Column(String(64), default=Status.STOPPED)
     status_message = Column(String(1024))
@@ -105,6 +105,7 @@ class Job(CommonColumns, Base):
     idempotency_token = Column(String(256))
     # All new columns added to this table must be nullable to ensure compatibility during database migrations.
     # Any default values specified for new columns will be ignored during the migration process.
+    backend_id = Column(String(64))
 
 
 class JobDefinition(CommonColumns, Base):
@@ -118,6 +119,7 @@ class JobDefinition(CommonColumns, Base):
     active = Column(Boolean, default=True)
     # All new columns added to this table must be nullable to ensure compatibility during database migrations.
     # Any default values specified for new columns will be ignored during the migration process.
+    backend_id = Column(String(64))
 
 
 def update_db_schema(engine, Base):
